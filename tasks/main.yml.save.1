@@ -1,0 +1,24 @@
+---
+# tasks file for devos50.bugreporter_runner
+- name: Installs bug reporter dependencies
+  action: apt pkg="{{item}}" state=present cache_valid_time=3600 update_cache=yes
+  with_items:
+    - git
+    - sudo
+    - python-pip
+
+- name: Create bug_reporter group
+  group: name="bug_reporter"
+
+- name: Create bug_reporter user
+  user: name=bug_reporter group=bug_reporter home=/var/lib/bug_reporter
+
+- name: "Install non-debian dependencies on bug reporter home"
+  pip: name="{{item}}" extra_args="--user"
+  become: yes
+  become_user: "bug_reporter"
+  with_items:
+    - django
+
+- name: make sure we have an up to date clone of the bug reporter repo
+  git: repo= dest=/opt/tribler depth=1 force=yes recursive=yes update=yes version={{tribler_repo_version}}

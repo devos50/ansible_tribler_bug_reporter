@@ -1,0 +1,65 @@
+---
+# tasks file for devos50.bugreporter_runner
+- name: Installs bug reporter dependencies
+  action: apt pkg="{{item}}" state=present cache_valid_time=3600 update_cache=yes
+  with_items:
+    - git
+    - sudo
+    - python-pip
+    - python-dev
+    - gcc
+    - nginx
+
+- name: Create bug_reporter group
+  group: name="bug_reporter"
+
+- name: Create bug_reporter user
+  user: name=bug_reporter group=bug_reporter home=/var/lib/bug_reporter
+
+- name: "Install non-debian dependencies on bug reporter home"
+  pip: name="{{item}}" extra_args="--user"
+  become: yes
+  become_user: "bug_reporter"
+  with_items:
+    - django
+    - gunicorn
+
+- name: make sure we have an up to date clone of the bug reporter repo
+  git: repo=https://github.com/devos50/errorreporter.git dest=/var/lib/bug_reporter/errorreporter depth=1 force=yes recursive=yes update=yes version=master
+
+- name: make the static root directory
+  file: path=/var/lib/bug_reporter/errorreporter_static owner=bug_reporter group=bug_reporter state=directory
+
+- name: collect static files
+  command: python /var/lib/bug_reporter/errorreporter/errorreporter/manage.py collectstatic --noinput
+  become: yes
+  become_user: bug_reporter
+
+- name: Install systemd bug reporter unit
+  command: cp /var/lib/bug_reporter/errorreporter/django.service /etc/systemd/system/django.service
+  register: service_file
+
+- name: Reload systemd
+  shell: systemctl daemon-reload
+  when: service_file.changed
+
+- name: Disable old services
+  service: name=django.service enabled=no state=stopped
+
+- name: Enable the django/gunicorn service
+  service: name=django.service enabled=yes state=restarted
+
+- name: Make sure the services are running
+  service: name=django.service enabled=yes state=started
+
+- name: Copy the nginx configuration script to the right location
+  command: cp /var/lib/bug_reporter/errorreporter/django-nginx.conf /etc/nginx/sites-available/django
+
+- name: Create a symlink to enable the django website
+  file: src=/etc/nginx/sites-available/django dest=/etc/nginx/sites-enabled/django state=link
+
+- name: Restart nginx
+  service: name=nginx enabled=yes state=restarted
+
+- name: Make sure the nginx service is running
+  service: name=nginx enabled=yes state=started
